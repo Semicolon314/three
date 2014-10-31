@@ -3,7 +3,7 @@ var scene, camera, renderer, cube, terrain;
 var verts = [];
 var time = 0;
 
-var ambientLight;
+var ambientLight, skyLight, sky;
 var cloud;
 
 WIDTH = 10;
@@ -11,6 +11,49 @@ HEIGHT = 40;
 
 waveline = 0.0;
 wakeline = 15.0;
+
+var lightLevel = 1.0;
+
+function Cloud(size, numParts) {
+  var geo, mat, rel, rot;
+
+  this.parts = [];
+  for(var i = 0; i < numParts; i++) {
+    geo = new THREE.DodecahedronGeometry(size * (Math.random() + 0.5));
+    mat = new THREE.MeshLambertMaterial({color: 0xDDDDDD, shading: THREE.FlatShading});
+    var posVary = 0.8 * size;
+    var rotVary = 0.01;
+    rel = new THREE.Vector3(Math.random() * 2 * posVary - posVary, Math.random() * 2 * posVary - posVary, Math.random() * 2 * posVary - posVary);
+    rot = new THREE.Vector3(Math.random() * 2 * rotVary - rotVary, Math.random() * 2 * rotVary - rotVary, Math.random() * 2 * rotVary - rotVary);
+    this.parts.push({mesh: new THREE.Mesh(geo, mat), relative: rel, rotate: rot});
+  }
+
+  this.position = new THREE.Vector3(0, 0, 0);
+}
+Cloud.prototype.addTo = function(scene) {
+  for(var i = 0; i < this.parts.length; i++) {
+    scene.add(this.parts[i].mesh);
+  }
+}
+Cloud.prototype.tick = function() {
+  for(var i = 0; i < this.parts.length; i++) {
+    var part = this.parts[i];
+    part.mesh.rotation.x += part.rotate.x;
+    part.mesh.rotation.y += part.rotate.y;
+    part.mesh.rotation.z += part.rotate.z;
+    part.mesh.position.addVectors(this.position, part.relative);
+  }
+}
+
+function interpolateColors(a, b, x) {
+  var red = ((a & 0xff0000) * (1 - x) + (b & 0xff0000) * x) / 0xff0000;
+  var green = ((a & 0x00ff00) * (1 - x) + (b & 0x00ff00) * x) / 0x00ff00;
+  var blue = ((a & 0x0000ff) * (1 - x) + (b & 0x0000ff) * x) / 0x0000ff;
+  red = Math.max(0, Math.min(1, red));
+  green = Math.max(0, Math.min(1, green));
+  blue = Math.max(0, Math.min(1, blue));
+  return Math.floor(red * 0xff) * 0x10000  + Math.floor(green * 0xff) * 0x100 + Math.floor(blue * 0xff);
+}
 
 function init() {
   seed = Math.floor(Math.random() * 10000);
@@ -33,7 +76,7 @@ function init() {
   scene.add(terrain);
 
   var spotLight = new THREE.SpotLight(0xffffff);
-  spotLight.position.set(1200, 200, 200);
+  spotLight.position.set(1200, 300, 200);
   spotLight.castShadow = true;
   spotLight.shadowMapWidth = 1024;
   spotLight.shadowMapHeight = 1024;
@@ -42,21 +85,18 @@ function init() {
   spotLight.shadowCameraFov = 30;
   scene.add(spotLight);
 
-  var cloudGeo = new THREE.DodecahedronGeometry(50, 0);
-  var cloudMat = new THREE.MeshLambertMaterial({color: 0xDDDDDD, shading: THREE.FlatShading});
-  cloud = new THREE.Mesh(cloudGeo, cloudMat);
-  scene.add(cloud);
-  cloud.position.set(0, 500, 0);
-  cloud.rotation.set(Math.random() * 10, Math.random() * 10, Math.random() * 10);
+  cloud = new Cloud(50, 5);
+  cloud.position.set(1000, 400, 0);
+  //cloud.addTo(scene);
 
   ambientLight = new THREE.AmbientLight(0x101010);
   scene.add(ambientLight);
 
-  var skyLight = new THREE.HemisphereLight(0x666666, 0xBBBBBB, 1);
+  skyLight = new THREE.HemisphereLight(interpolateColors(0x222222, 0x666666, lightLevel), 0xBBBBBB, 1);
   scene.add(skyLight);
 
   var skyGeo = new THREE.SphereGeometry( 1000, 32, 15 );
-  var skyMat = new THREE.MeshBasicMaterial({color: 0xb2ffff});
+  var skyMat = new THREE.MeshBasicMaterial({color: interpolateColors(0x000000, 0xb2ffff, lightLevel)});
   sky = new THREE.Mesh( skyGeo, skyMat );
   sky.material.side = THREE.DoubleSide;
   scene.add( sky );
@@ -139,9 +179,15 @@ function render() {
   terrain.geometry.computeBoundingBox();
   terrain.geometry.computeFaceNormals();
   terrain.geometry.computeVertexNormals();
+  cloud.tick();
+  cloud.position.x -= 2;
 
-  cloud.rotation.x += 0.05;
-  cloud.rotation.y += 0.05;
+  lightLevel = 0.5 * (1 + Math.cos(time / 10));
+  //console.log(lightLevel);
+
+  // Update light colours
+  skyLight.color.setHex(interpolateColors(0x222222, 0x666666, lightLevel));
+  sky.material.color.setHex(interpolateColors(0x000000, 0xb2ffff, lightLevel));
 
   //distortGeometry(cloud.geometry, 5, time, 0.01, 1234);
 
