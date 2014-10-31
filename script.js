@@ -3,8 +3,14 @@ var scene, camera, renderer, cube, terrain;
 var verts = [];
 var time = 0;
 
+var ambientLight;
+var cloud;
+
 WIDTH = 10;
 HEIGHT = 40;
+
+waveline = 0.0;
+wakeline = 15.0;
 
 function init() {
   seed = Math.floor(Math.random() * 10000);
@@ -36,10 +42,17 @@ function init() {
   spotLight.shadowCameraFov = 30;
   scene.add(spotLight);
 
-  var ambientLight = new THREE.AmbientLight(0x404040);
+  var cloudGeo = new THREE.DodecahedronGeometry(50, 0);
+  var cloudMat = new THREE.MeshLambertMaterial({color: 0xDDDDDD, shading: THREE.FlatShading});
+  cloud = new THREE.Mesh(cloudGeo, cloudMat);
+  scene.add(cloud);
+  cloud.position.set(0, 500, 0);
+  cloud.rotation.set(Math.random() * 10, Math.random() * 10, Math.random() * 10);
+
+  ambientLight = new THREE.AmbientLight(0x101010);
   scene.add(ambientLight);
 
-  var skyLight = new THREE.HemisphereLight(0x000088, 0x00CC00, 1);
+  var skyLight = new THREE.HemisphereLight(0x666666, 0xBBBBBB, 1);
   scene.add(skyLight);
 
   var skyGeo = new THREE.SphereGeometry( 1000, 32, 15 );
@@ -55,11 +68,28 @@ function init() {
   render();
 }
 
+function distortGeometry(geometry, amplitude, time, timeDelta, perlinSeed) {
+  for(var i = 0; i < geometry.vertices.length; i++) {
+    var vert = geometry.vertices[i];
+    var dx = perlin.pnoise2(i, time, 0.4, 4, perlinSeed) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed);
+    var dy = perlin.pnoise2(i, time, 0.4, 4, perlinSeed + 1) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed + 1);
+    var dz = perlin.pnoise2(i, time, 0.4, 4, perlinSeed + 2) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed + 2);
+    vert.x += dx;
+    vert.y += dy;
+    vert.z += dz;
+  }
+  geometry.verticesNeedUpdate = true;
+  geometry.normalsNeedUpdate = true;
+  geometry.computeBoundingBox();
+  geometry.computeFaceNormals();
+  geometry.computeVertexNormals();
+}
+
 function updateVerts(resolution, blocksX, blocksY, time) {
   for(var i = 0; i <= resolution * blocksX; i++) {
     for(var j = 0; j <= resolution * blocksY; j++) {
       var h = perlin.pnoise3(i / resolution, j / resolution, time, persist, octaves, seed);
-      verts[i * resolution * blocksY + j].y = h;
+      verts[i * resolution * blocksY + j].y = h + Math.max(0, Math.min(3, 3 - 0.1 * Math.abs(waveline - j))) - Math.max(0, Math.min(3, 3 - 0.1 * Math.abs(wakeline - j)));
     }
   }
 }
@@ -96,6 +126,12 @@ function render() {
   requestAnimationFrame( render );
 
   time += 0.01;
+  waveline += 0.17;
+  wakeline += 0.17;
+  if(waveline > 160) {
+    waveline -= 160;
+    wakeline -= 160;
+  }
   updateVerts(3, WIDTH, HEIGHT, time);
   terrain.geometry.vertices = verts;
   terrain.geometry.verticesNeedUpdate = true;
@@ -103,6 +139,11 @@ function render() {
   terrain.geometry.computeBoundingBox();
   terrain.geometry.computeFaceNormals();
   terrain.geometry.computeVertexNormals();
+
+  cloud.rotation.x += 0.05;
+  cloud.rotation.y += 0.05;
+
+  //distortGeometry(cloud.geometry, 5, time, 0.01, 1234);
 
   renderer.render( scene, camera );
 }
