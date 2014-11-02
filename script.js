@@ -9,13 +9,12 @@ var cloud;
 WIDTH = 10;
 HEIGHT = 40;
 
-waveline = 0.0;
-wakeline = 15.0;
+waveline = -50.0;
 
 var lightLevel = 1.0;
 
 function Cloud(size, numParts) {
-  var geo, mat, rel, rot;
+  var geo, mat, rel, rot, mesh;
 
   this.parts = [];
   for(var i = 0; i < numParts; i++) {
@@ -25,7 +24,9 @@ function Cloud(size, numParts) {
     var rotVary = 0.01;
     rel = new THREE.Vector3(Math.random() * 2 * posVary - posVary, Math.random() * 2 * posVary - posVary, Math.random() * 2 * posVary - posVary);
     rot = new THREE.Vector3(Math.random() * 2 * rotVary - rotVary, Math.random() * 2 * rotVary - rotVary, Math.random() * 2 * rotVary - rotVary);
-    this.parts.push({mesh: new THREE.Mesh(geo, mat), relative: rel, rotate: rot});
+    mesh = new THREE.Mesh(geo, mat);
+    distortGeometry(mesh.geometry, 5, 0, 20, 1234 + i);
+    this.parts.push({mesh: mesh, relative: rel, rotate: rot});
   }
 
   this.position = new THREE.Vector3(0, 0, 0);
@@ -35,13 +36,14 @@ Cloud.prototype.addTo = function(scene) {
     scene.add(this.parts[i].mesh);
   }
 }
-Cloud.prototype.tick = function() {
+Cloud.prototype.tick = function(time) {
   for(var i = 0; i < this.parts.length; i++) {
     var part = this.parts[i];
-    part.mesh.rotation.x += part.rotate.x;
-    part.mesh.rotation.y += part.rotate.y;
-    part.mesh.rotation.z += part.rotate.z;
+    //part.mesh.rotation.x += part.rotate.x;
+    //part.mesh.rotation.y += part.rotate.y;
+    //part.mesh.rotation.z += part.rotate.z;
     part.mesh.position.addVectors(this.position, part.relative);
+    distortGeometry(part.mesh.geometry, 5, time, 0.01, 1234 + i);
   }
 }
 
@@ -61,7 +63,7 @@ function init() {
   octaves = 10;
 
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 4000 );
+  camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 5000 );
 
   renderer = new THREE.WebGLRenderer();
   renderer.setSize( window.innerWidth, window.innerHeight );
@@ -86,7 +88,7 @@ function init() {
   scene.add(spotLight);
 
   cloud = new Cloud(50, 5);
-  cloud.position.set(1000, 400, 0);
+  cloud.position.set(200, 400, -1000);
   //cloud.addTo(scene);
 
   ambientLight = new THREE.AmbientLight(0x101010);
@@ -114,9 +116,9 @@ function distortGeometry(geometry, amplitude, time, timeDelta, perlinSeed) {
     var dx = perlin.pnoise2(i, time, 0.4, 4, perlinSeed) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed);
     var dy = perlin.pnoise2(i, time, 0.4, 4, perlinSeed + 1) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed + 1);
     var dz = perlin.pnoise2(i, time, 0.4, 4, perlinSeed + 2) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed + 2);
-    vert.x += dx;
-    vert.y += dy;
-    vert.z += dz;
+    vert.x += dx * amplitude;
+    vert.y += dy * amplitude;
+    vert.z += dz * amplitude;
   }
   geometry.verticesNeedUpdate = true;
   geometry.normalsNeedUpdate = true;
@@ -129,7 +131,11 @@ function updateVerts(resolution, blocksX, blocksY, time) {
   for(var i = 0; i <= resolution * blocksX; i++) {
     for(var j = 0; j <= resolution * blocksY; j++) {
       var h = perlin.pnoise3(i / resolution, j / resolution, time, persist, octaves, seed);
-      verts[i * resolution * blocksY + j].y = h + Math.max(0, Math.min(3, 3 - 0.1 * Math.abs(waveline - j))) - Math.max(0, Math.min(3, 3 - 0.1 * Math.abs(wakeline - j)));
+      var wave = - 5 * Math.sin((j - waveline) / 10.0) / (Math.pow((j - waveline) / 10.0, 2) + 1.0);
+      if(Math.abs(j - waveline) / 10.0 > Math.PI * 2) {
+        wave = 0;
+      }
+      verts[i * resolution * blocksY + j].y = h + wave;
     }
   }
 }
@@ -167,10 +173,8 @@ function render() {
 
   time += 0.01;
   waveline += 0.17;
-  wakeline += 0.17;
-  if(waveline > 160) {
-    waveline -= 160;
-    wakeline -= 160;
+  if(waveline > 200) {
+    waveline = -50;
   }
   updateVerts(3, WIDTH, HEIGHT, time);
   terrain.geometry.vertices = verts;
@@ -179,17 +183,17 @@ function render() {
   terrain.geometry.computeBoundingBox();
   terrain.geometry.computeFaceNormals();
   terrain.geometry.computeVertexNormals();
-  cloud.tick();
-  cloud.position.x -= 2;
+  cloud.tick(time);
+  //cloud.position.x += 2;
+  cloud.position.z += 2;
 
   lightLevel = 0.5 * (1 + Math.cos(time / 10));
-  //console.log(lightLevel);
 
   // Update light colours
   skyLight.color.setHex(interpolateColors(0x222222, 0x666666, lightLevel));
   sky.material.color.setHex(interpolateColors(0x000000, 0xb2ffff, lightLevel));
 
-  //distortGeometry(cloud.geometry, 5, time, 0.01, 1234);
+  //distortGeometry(cloud.geometry, 5, tim e, 0.01, 1234);
 
   renderer.render( scene, camera );
 }
