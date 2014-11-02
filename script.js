@@ -194,7 +194,16 @@ function render() {
   clouds.forEach(function(cloud) {
     cloud.tick(time);
     cloud.mesh.position.z += 1;
+    if(cloud.mesh.position.z > 1000) {
+      cloud.removeMe = true;
+    }
   });
+  for(var i = 0; i < clouds.length; i++) {
+    if(clouds[i].removeMe) {
+      scene.remove(clouds.splice(i, 1)[0].mesh);
+      i--;
+    }
+  }
 
   if(Math.random() < cloudGenRate) {
     var cloud = new Cloud();
