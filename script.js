@@ -4,7 +4,7 @@ var verts = [];
 var time = 0;
 
 var ambientLight, skyLight, sky;
-var cloud;
+var clouds;
 
 WIDTH = 10;
 HEIGHT = 40;
@@ -12,39 +12,22 @@ HEIGHT = 40;
 waveline = -50.0;
 
 var lightLevel = 1.0;
+var cloudGenRate = 0.004;
 
-function Cloud(size, numParts) {
-  var geo, mat, rel, rot, mesh;
-
-  this.parts = [];
-  for(var i = 0; i < numParts; i++) {
-    geo = new THREE.DodecahedronGeometry(size * (Math.random() + 0.5));
-    mat = new THREE.MeshLambertMaterial({color: 0xDDDDDD, shading: THREE.FlatShading});
-    var posVary = 0.8 * size;
-    var rotVary = 0.01;
-    rel = new THREE.Vector3(Math.random() * 2 * posVary - posVary, Math.random() * 2 * posVary - posVary, Math.random() * 2 * posVary - posVary);
-    rot = new THREE.Vector3(Math.random() * 2 * rotVary - rotVary, Math.random() * 2 * rotVary - rotVary, Math.random() * 2 * rotVary - rotVary);
-    mesh = new THREE.Mesh(geo, mat);
-    distortGeometry(mesh.geometry, 5, 0, 20, 1234 + i);
-    this.parts.push({mesh: mesh, relative: rel, rotate: rot});
-  }
-
-  this.position = new THREE.Vector3(0, 0, 0);
-}
-Cloud.prototype.addTo = function(scene) {
-  for(var i = 0; i < this.parts.length; i++) {
-    scene.add(this.parts[i].mesh);
-  }
+function Cloud() {
+  var rotVary = 0.01;
+  this.angularVelocity = new THREE.Vector3(Math.random() * 2 * rotVary - rotVary, Math.random() * 2 * rotVary - rotVary, Math.random() * 2 * rotVary - rotVary);
+  var geo = new THREE.DodecahedronGeometry(10, 0);
+  var mat = new THREE.MeshLambertMaterial({color: 0xDDDDDD, shading: THREE.FlatShading});
+  this.mesh = new THREE.Mesh(geo, mat);
+  this.mesh.castShadow = true;
+  this.perlinSeed = Math.floor(Math.random() * 10000);
 }
 Cloud.prototype.tick = function(time) {
-  for(var i = 0; i < this.parts.length; i++) {
-    var part = this.parts[i];
-    //part.mesh.rotation.x += part.rotate.x;
-    //part.mesh.rotation.y += part.rotate.y;
-    //part.mesh.rotation.z += part.rotate.z;
-    part.mesh.position.addVectors(this.position, part.relative);
-    distortGeometry(part.mesh.geometry, 5, time, 0.01, 1234 + i);
-  }
+  this.mesh.rotation.x += this.angularVelocity.x;
+  this.mesh.rotation.y += this.angularVelocity.y;
+  this.mesh.rotation.z += this.angularVelocity.z;
+  distortGeometry(this.mesh.geometry, 40, time, this.perlinSeed);
 }
 
 function interpolateColors(a, b, x) {
@@ -78,7 +61,7 @@ function init() {
   scene.add(terrain);
 
   var spotLight = new THREE.SpotLight(0xffffff);
-  spotLight.position.set(1200, 300, 200);
+  spotLight.position.set(1200*2, 300*2, 200*2);
   spotLight.castShadow = true;
   spotLight.shadowMapWidth = 1024;
   spotLight.shadowMapHeight = 1024;
@@ -87,10 +70,14 @@ function init() {
   spotLight.shadowCameraFov = 30;
   scene.add(spotLight);
 
-  cloud = new Cloud(50, 5);
-  cloud.position.set(200, 400, -1000);
-  //cloud.addTo(scene);
-
+  clouds = [];
+  /*for(var i = 0; i < 50; i++) {
+    var cloud = new Cloud();
+    cloud.mesh.position.set(Math.floor(Math.random() * 1000)-500, 350, Math.floor(Math.random() * 1000)-500);
+    scene.add(cloud.mesh);
+    clouds.push(cloud);
+  }
+*/
   ambientLight = new THREE.AmbientLight(0x101010);
   scene.add(ambientLight);
 
@@ -110,15 +97,36 @@ function init() {
   render();
 }
 
-function distortGeometry(geometry, amplitude, time, timeDelta, perlinSeed) {
+function adjacentVertices(geometry, vertex) {
+  var adj = [];
+  for(var i = 0; i < geometry.faces.length; i++) {
+    var face = geometry.faces[i];
+    if(face.a == vertex || face.b == vertex || face.c == vertex) {
+      [face.a, face.b, face.c].forEach(function(v) {
+        if(v != vertex && adj.indexOf(v) == -1) {
+          adj.push(v);
+        }
+      });
+    }
+  }
+  return adj;
+}
+
+function distortGeometry(geometry, size, time, perlinSeed) {
+  var lens = [];
   for(var i = 0; i < geometry.vertices.length; i++) {
-    var vert = geometry.vertices[i];
-    var dx = perlin.pnoise2(i, time, 0.4, 4, perlinSeed) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed);
-    var dy = perlin.pnoise2(i, time, 0.4, 4, perlinSeed + 1) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed + 1);
-    var dz = perlin.pnoise2(i, time, 0.4, 4, perlinSeed + 2) - perlin.pnoise2(i, time - timeDelta, 0.4, 4, perlinSeed + 2);
-    vert.x += dx * amplitude;
-    vert.y += dy * amplitude;
-    vert.z += dz * amplitude;
+    lens.push((perlin.pnoise2(i, time + i * 0.32214, 0.4, 4, perlinSeed) + 1.5) * size);
+  }
+  for(var i = 0; i < geometry.vertices.length; i++) {
+    // Find average adjacent vertex length
+    var adj = adjacentVertices(geometry, i);
+    var total = 0;
+    for(var j = 0; j < adj.length; j++) {
+      total += lens[adj[j]];
+    }
+    total /= adj.length;
+    // Set the length of this vertex to the average of its length and the average length of adjacent vertices
+    geometry.vertices[i].setLength((lens[i] + total * 2) / 3);
   }
   geometry.verticesNeedUpdate = true;
   geometry.normalsNeedUpdate = true;
@@ -183,9 +191,19 @@ function render() {
   terrain.geometry.computeBoundingBox();
   terrain.geometry.computeFaceNormals();
   terrain.geometry.computeVertexNormals();
-  cloud.tick(time);
+  clouds.forEach(function(cloud) {
+    cloud.tick(time);
+    cloud.mesh.position.z += 1;
+  });
+
+  if(Math.random() < cloudGenRate) {
+    var cloud = new Cloud();
+    cloud.mesh.position.set(Math.floor(Math.random() * 1000)-600, 350, -1500);
+    scene.add(cloud.mesh);
+    clouds.push(cloud);
+  }
   //cloud.position.x += 2;
-  cloud.position.z += 2;
+  //cloud.position.z += 2;
 
   lightLevel = 0.5 * (1 + Math.cos(time / 10));
 
